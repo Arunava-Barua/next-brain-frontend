@@ -1,6 +1,7 @@
 import React, { useState, useContext } from "react";
 import { NextBrainContext } from "../../context/NextBrainContext.jsx";
-import { RotatingLines } from "react-loader-spinner"
+import { RotatingLines } from "react-loader-spinner";
+import axios from "axios";
 
 interface CardProps {
   title: string;
@@ -26,8 +27,7 @@ const Card: React.FC<CardProps> = ({ title, description, onUse }) => {
 const Explore: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const {isLoading, setIsLoading} = useContext(NextBrainContext);
-
+  const { isLoading, setIsLoading } = useContext(NextBrainContext);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -41,35 +41,40 @@ const Explore: React.FC = () => {
       return;
     }
 
+    const baseUrl = "https://6452-103-215-237-64.ngrok-free.app"; // Base URL
+    const endPoint = "/use_model"; // API endpoint
+
     setIsLoading(true);
 
-    // Simulate an API request to process the file and get a response
     try {
+      // Prepare FormData to send the CSV file
       const formData = new FormData();
       formData.append("file", selectedFile);
-
-      // Simulate API call
-      const response = await fetch("/api/process-file", {
-        method: "POST",
-        body: formData,
+  
+      // Make API call using Axios
+      const response = await axios.post(`${baseUrl}${endPoint}`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        responseType: "blob", // Expecting a file-like blob response
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to process the file");
-      }
-
-      const blob = await response.blob();
+  
+      // Convert the response to a downloadable URL
+      const blob = new Blob([response.data], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
-
-      // Trigger file download
+  
+      // Create a temporary download link
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", "processed_file.csv");
+      link.setAttribute("download", "processed_file.csv"); // Set file name
       document.body.appendChild(link);
-      link.click();
-      link.remove();
+      link.click(); // Trigger download
+      link.remove(); // Clean up the link
+      window.URL.revokeObjectURL(url); // Free memory
+  
+      console.log("File successfully downloaded.");
     } catch (error) {
-      console.error("Error:", error);
+      console.error("Error processing the file:", error);
       alert("An error occurred while processing the file.");
     } finally {
       setIsLoading(false);
@@ -81,20 +86,16 @@ const Explore: React.FC = () => {
   const cards = [
     {
       id: 1,
-      title: "Model 1",
-      description: "This is the description for Model 1.",
+      title: "Ethereum Fraud Detection",
+      description:
+        "Detects whether a given Ethereum transaction(s) is fradulent or not.",
       onUse: () => setIsModalOpen(true),
     },
     {
       id: 2,
-      title: "Model 2",
-      description: "This is the description for Model 2.",
-      onUse: () => setIsModalOpen(true),
-    },
-    {
-      id: 3,
-      title: "Model 3",
-      description: "This is the description for Model 3.",
+      title: "$BASE Token Price Prediction",
+      description:
+        "Predicts the $BASE token price over a given amount of time period.",
       onUse: () => setIsModalOpen(true),
     },
   ];
@@ -139,7 +140,15 @@ const Explore: React.FC = () => {
                 className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                 disabled={isLoading}
               >
-                {isLoading ? <RotatingLines height={'30'} width={'30'} strokeColor="white"/> : "Submit"}
+                {isLoading ? (
+                  <RotatingLines
+                    height={"30"}
+                    width={"30"}
+                    strokeColor="white"
+                  />
+                ) : (
+                  "Submit"
+                )}
               </button>
             </div>
           </div>

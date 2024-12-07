@@ -1,11 +1,19 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 
 import { NextBrainContext } from "../../context/NextBrainContext.jsx";
 import { RotatingLines } from "react-loader-spinner";
 import { useNavigate } from "react-router-dom"; // Import navigate function
+import { EAS, SchemaEncoder } from "@ethereum-attestation-service/eas-sdk";
 
+import { ethers } from "ethers";
 import * as base32 from "hi-base32"; // For base32 encoding
 import { read, utils } from "xlsx"; // To read CSV content
+import SHA256 from "crypto-js/sha256";
+import EncHex from "crypto-js/enc-hex";
+
+import axios from "axios";
+
+const EAS_SUBGRAPH_URL = "https://base-sepolia.easscan.org/graphql";
 
 const Attestations: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -17,40 +25,69 @@ const Attestations: React.FC = () => {
   const [owner, setOwner] = useState("");
   const [category, setCategory] = useState("Identity");
   const [fileBase32, setFileBase32] = useState<string | null>(null);
-
-  // Mock data for My Attestations
-  const myAttestations = [
-    {
-      id: 1,
-      hash: "0x9aCEcAF7e11BCbb9c114724FF8F51930e24f164b",
-      category: "Identity",
-      signature: "0xabc123",
-    },
-    {
-      id: 2,
-      hash: "0x9aCEcAF7e11BCbb9c114724FF8F51930e24f164b",
-      category: "Skill",
-      signature: "0xdef456",
-    },
-  ];
+  const [allAttestations, setAllAttestations] = useState([]);
 
   // Mock data for New Contributions
   const newContributions = [
     {
       id: 1,
-      title: "Skill Verification",
-      address: "0x9aCEcAF7e11BCbb9c114724FF8F51930e24f164b",
-      description: "Verify skills for Web3 development.",
-      category: "Skill",
-    },
-    {
-      id: 2,
-      title: "KYC Verification",
-      address: "0x9aCEcAF7e11BCbb9c114724FF8F51930e243456",
-      description: "Contribute to identity attestations.",
-      category: "Identity",
-    },
+      title: "Ethereum Fraud Detection",
+      address: "0x482149a56D6BEd44e8452B7958519246eecaCd8E",
+      description: "Detects whether a given Ethereum transaction(s) is fradulent or not.",
+      category: "Fraud Detection",
+    }
   ];
+
+  const fetchAttestationsByRecipient = async (
+    recipient = "0x482149a56D6BEd44e8452B7958519246eecaCd8E"
+  ) => {
+    const query = `
+      query GetAttestationsByRecipient($recipient: String!) {
+        attestations(where: { recipient: { equals: $recipient } }) {
+          id
+          attester
+          recipient
+          schemaId
+          data
+          timeCreated
+          revoked
+        }
+      }
+    `;
+
+    const variables = { recipient };
+
+    try {
+      const response = await axios.post(
+        EAS_SUBGRAPH_URL,
+        { query, variables },
+        { headers: { "Content-Type": "application/json" } }
+      );
+
+      console.log(response.data.data.attestations);
+      return response.data.data.attestations || [];
+    } catch (error) {
+      console.error("Error fetching attestations:", error);
+      return [];
+    }
+  };
+
+  useEffect(() => {
+    const run = async () => {
+      const attestations = await fetchAttestationsByRecipient();
+      setAllAttestations(attestations);
+    }
+    run();
+  }, []);
+
+  const formatDate = (timestamp) => {
+    const date = new Date(timestamp * 1000); // Multiply by 1000 to convert seconds to milliseconds
+    const day = String(date.getDate()).padStart(2, "0"); // Ensure two-digit day
+    const month = date.toLocaleString("default", { month: "short" }); // Get short month name
+    const year = date.getFullYear(); // Get the year
+  
+    return `${day} ${month} ${year}`;
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -62,46 +99,168 @@ const Attestations: React.FC = () => {
     if (selectedFile) {
       try {
         const reader = new FileReader();
-        reader.onload = async (e) => {
-          const fileContent = e.target?.result as string;
-          const workbook = read(fileContent, { type: "string" });
-          const csvData = utils.sheet_to_csv(
-            workbook.Sheets[workbook.SheetNames[0]]
-          );
-          const encoded = base32.encode(csvData);
-          console.log(encoded);
-          if (encoded.length > 32) {
-            alert(
-              "Base32 encoded file exceeds 32 bytes. Please reduce file size."
-            );
-          } else {
-            setFileBase32(encoded);
-            console.log("Base32 Encoded File:", encoded);
-          }
-        };
-        reader.readAsBinaryString(selectedFile);
+
+        return new Promise<string>((resolve, reject) => {
+          reader.onload = (e) => {
+            try {
+              const fileContent = e.target?.result as string;
+
+              const workbook = read(fileContent, { type: "string" });
+              const csvData = utils.sheet_to_csv(
+                workbook.Sheets[workbook.SheetNames[0]]
+              );
+
+              // Hash CSV content using SHA-256
+              const hash = SHA256(csvData).toString(EncHex);
+
+              // Encode and trim to 32 bytes
+              const encoded = base32.encode(hash);
+              const trimmedEncoded = encoded.slice(0, 31);
+
+              console.log("Trimmed Encoded: ", trimmedEncoded.length);
+              resolve(trimmedEncoded);
+            } catch (error) {
+              console.error("Error processing file:", error);
+              reject(error);
+            }
+          };
+
+          reader.onerror = (err) => {
+            reject(err);
+          };
+
+          reader.readAsBinaryString(selectedFile);
+        });
       } catch (error) {
         console.error("File conversion error:", error);
+        throw error;
       }
+    } else {
+      throw new Error("No file selected");
     }
   };
 
-  const handleSubmit = () => {
+  const handleAttestationSubmit = async () => {
     if (!owner || !selectedFile || !category) {
       alert("All fields are required!");
       return;
     }
     setIsLoading(true);
 
-    handleFileConversion();
-    setTimeout(() => {
+    try {
+      // 1. Get bytes32 string synchronously
+      const convertedFile = await handleFileConversion();
+
+      // 2. Prepare EAS payload
+      const easPayload = [
+        {
+          name: "owner",
+          value: owner, // wallet address
+          type: "address",
+        },
+        {
+          name: "hash",
+          value: convertedFile, // Use directly from handleFileConversion
+          type: "bytes32",
+        },
+        { name: "category", value: category, type: "string" },
+      ];
+
+      console.log("EAS Payload:", easPayload);
+
+      // 3. Upload to EAS
+      await uploadToEas(easPayload);
+
+      // 4. Generate a JSON file
+
+      setTimeout(() => {
+        setIsLoading(false);
+        setIsFormOpen(false);
+        setSelectedFile(null);
+        setOwner("");
+        setCategory("Identity");
+        console.log("Form Submitted:", { owner, category, convertedFile });
+      }, 2000);
+    } catch (error) {
+      console.error("Error during attestation submit:", error);
       setIsLoading(false);
-      setIsFormOpen(false);
-      setSelectedFile(null);
-      setOwner("");
-      setCategory("Identity");
-      console.log("Form Submitted:", { owner, category, fileBase32 });
-    }, 2000);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedFile) {
+      alert("All fields are required!");
+      return;
+    }
+    const baseUrl = "https://6452-103-215-237-64.ngrok-free.app"; // Replace with your actual base URL
+    setIsLoading(true);
+  
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+  
+      const response = await axios.post(`${baseUrl}/train-submit-model`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+  
+      const { status, accuracy_value } = response.data;
+      const accuracyPercentage = (accuracy_value * 100).toFixed(2);
+  
+      console.log("Response:", response.data);
+  
+      // Navigate to Progress page with response details
+      navigate("/progress", { state: { status, accuracy: accuracyPercentage } });
+    } catch (error) {
+      console.error("Error submitting file:", error);
+      alert("An error occurred while submitting the file. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+
+  const uploadToEas = async (attestationData) => {
+    // Initialize provider and wallet for Base Sepolia
+    const provider = new ethers.JsonRpcProvider("https://sepolia.base.org");
+    const wallet = new ethers.Wallet(
+      "79d99e77724cdbc0e41c46f5a4e62ece4cd0d97e0b184370fa7dfc347920019e",
+      provider
+    );
+
+    // Connect to EAS contract on Base Sepolia
+    const eas = new EAS("0x4200000000000000000000000000000000000021");
+    eas.connect(wallet);
+
+    console.log("EAS SDK Initialized on Base Sepolia");
+
+    // Replace this with your schema UID (from EAS platform)
+    const SCHEMA_UID =
+      "0x82569fc8f1d4b2e103ecfb59953fb0f725bc17fbbe2174538c3bdcdc0d44a411";
+
+    // Encode data based on schema format
+    const schemaEncoder = new SchemaEncoder(
+      "address owner,bytes32 hash,string category"
+    );
+
+    const encodedData = schemaEncoder.encodeData(attestationData);
+
+    // Create attestation
+    const tx = await eas.attest({
+      schema: SCHEMA_UID,
+      data: {
+        recipient: owner,
+        expirationTime: 0, // No expiration
+        revocable: true,
+        data: encodedData,
+      },
+    });
+
+    console.log("Transaction sent. Hash:", tx);
+
+    const attestationUID = await tx.wait();
+    console.log("Attestation UID:", attestationUID);
   };
 
   return (
@@ -121,18 +280,20 @@ const Attestations: React.FC = () => {
         <thead>
           <tr className="bg-gray-200">
             <th className="py-4 px-6">SL No.</th>
-            <th className="py-4 px-6">Hash</th>
-            <th className="py-4 px-6">Category</th>
-            <th className="py-4 px-6">Signature</th>
+            <th className="py-4 px-6">Attestation UID</th>
+            <th className="py-4 px-6">Schema ID</th>
+            <th className="py-4 px-6">Created On</th>
+            <th className="py-4 px-6">Revoked</th>
           </tr>
         </thead>
         <tbody>
-          {myAttestations.map((attestation, index) => (
-            <tr key={attestation.id} className="border-b hover:bg-gray-100">
+          {allAttestations && allAttestations.map((attestation, index) => (
+            <tr key={attestation?.id} className="border-b hover:bg-gray-100">
               <td className="py-4 px-6">{index + 1}</td>
-              <td className="py-4 px-6">{attestation.hash}</td>
-              <td className="py-4 px-6">{attestation.category}</td>
-              <td className="py-4 px-6">{attestation.signature}</td>
+              <td className="py-4 px-6">{attestation.id.slice(0, 5)}...{attestation.id.slice(-4)}</td>
+              <td className="py-4 px-6">{attestation.schemaId.slice(0, 5)}...{attestation.schemaId.slice(-4)}</td>
+              <td className="py-4 px-6">{formatDate(attestation.timeCreated)}</td>
+              <td className="py-4 px-6">{attestation.revoked ? "True" : "False"}</td>
             </tr>
           ))}
         </tbody>
@@ -194,7 +355,7 @@ const Attestations: React.FC = () => {
                   Cancel
                 </button>
                 <button
-                  onClick={handleSubmit}
+                  onClick={handleAttestationSubmit}
                   className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                 >
                   {isLoading ? (

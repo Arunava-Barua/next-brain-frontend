@@ -1,46 +1,70 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 
 const Progress: React.FC = () => {
-  const [progress, setProgress] = useState(33); // Start at "Submitted" (33%)
-  const [status, setStatus] = useState<"Submitted" | "Analysing" | "Accepted" | "Rejected">("Submitted");
-  const [barColor, setBarColor] = useState("bg-blue-500"); // Default color for progress
-
+  const location = useLocation();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    // Simulate progression
-    const timer = setTimeout(() => {
-      if (status === "Submitted") {
-        setProgress(66);
-        setStatus("Analysing");
-      } else if (status === "Analysing") {
-        setProgress(100);
-        const isAccepted = Math.random() > 0.5; // Random accept/reject
-        setStatus(isAccepted ? "Accepted" : "Rejected");
-        setBarColor(isAccepted ? "bg-green-500" : "bg-red-500");
-      }
-    }, 3000); // Change every 3 seconds
+  // Extract passed data from API response
+  const { status: apiStatus, accuracy } = location.state || {
+    status: null, // Status as boolean
+    accuracy: null,
+  };
 
-    return () => clearTimeout(timer);
-  }, [status]);
+  const [progress, setProgress] = useState(66); // Start at 66% "Analysing"
+  const [status, setStatus] = useState("Analysing");
+  const [barColor, setBarColor] = useState("bg-yellow-500");
 
   useEffect(() => {
-    // Navigate back after progress completion
+    if (apiStatus !== null) {
+      setTimeout(() => {
+        if (apiStatus) {
+          // Status is true -> Accepted
+          setProgress(100);
+          setStatus("Accepted");
+          setBarColor("bg-green-500");
+        } else {
+          // Status is false -> Rejected
+          setProgress(100);
+          setStatus("Rejected");
+          setBarColor("bg-red-500");
+        }
+      }, 3000); // Transition after 3 seconds
+    }
+  }, [apiStatus]);
+
+  useEffect(() => {
+    // Automatically navigate after a delay when progress reaches 100%
     if (progress === 100) {
-      setTimeout(() => navigate("/attestations"), 3000); // Redirect to "Attestations" after 3 seconds
+      setTimeout(() => navigate("/attestations"), 3000);
     }
   }, [progress, navigate]);
 
   return (
     <div className="p-12 max-w-4xl mx-auto">
-      <h1 className="text-4xl font-bold mb-8">Progress</h1>
+      <h1 className="text-4xl font-bold mb-8 text-center">Training Progress</h1>
+
+      {/* Accuracy Header */}
+      {accuracy && (
+        <p className="text-xl font-semibold text-center mb-4">
+          Accuracy Achieved: {accuracy}%
+        </p>
+      )}
+
+      {/* Progress Bar */}
       <div className="relative h-8 bg-gray-200 rounded-full overflow-hidden">
         <div
-          className={`absolute h-full ${barColor}`}
+          className={`absolute h-full ${barColor} flex items-center justify-center text-white font-bold`}
           style={{ width: `${progress}%` }}
-        ></div>
+        >
+          {/* Show Accuracy only at 100% */}
+          {progress === 100 && accuracy && (
+            <span>Accuracy: {accuracy}%</span>
+          )}
+        </div>
       </div>
+
+      {/* Status */}
       <p className="mt-4 text-xl font-semibold text-center">{status}</p>
     </div>
   );

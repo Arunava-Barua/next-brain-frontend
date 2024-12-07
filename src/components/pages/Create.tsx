@@ -1,7 +1,7 @@
 import React, { useState, useContext } from "react";
-
 import { NextBrainContext } from "../../context/NextBrainContext.jsx";
-import { RotatingLines } from "react-loader-spinner"
+import { RotatingLines } from "react-loader-spinner";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 const Create = () => {
   const [formData, setFormData] = useState({
@@ -10,7 +10,8 @@ const Create = () => {
     category: "",
     neuralSchema: "",
   });
-  const {isLoading, setIsLoading} = useContext(NextBrainContext);
+  const [showAlert, setShowAlert] = useState(false);
+  const { isLoading, setIsLoading } = useContext(NextBrainContext);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -22,19 +23,49 @@ const Create = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    
+
     setIsLoading(true);
     console.log("Form Data Submitted:", formData);
 
-    // Add submission logic (e.g., API call)
-    alert("Form submitted!");
-    setIsLoading(false);
+    // Simulate API call
+    setTimeout(() => {
+      setIsLoading(false);
+      console.log("Model created successfully!");
+      setShowAlert(true);
+
+      // Trigger alert after 5 seconds
+      setTimeout(() => {
+        setShowAlert(false);
+      }, 5000);
+    }, 2000);
   };
 
   return (
-    // <div className="max-w-6xl mx-auto p-12">
     <>
       <h1 className="text-4xl font-bold mb-8">Create New Model</h1>
+
+      {/* Success Alert */}
+      {showAlert && (
+        <div
+          className="fixed bottom-4 right-4 bg-gray-800 text-white p-4 rounded-lg shadow-lg flex items-center space-x-3 w-80"
+          style={{ zIndex: 1000 }}
+        >
+          <div className="flex flex-col">
+            <AlertTitle className="text-lg font-bold">Success🎉</AlertTitle>
+            <AlertDescription className="text-sm">
+              Your model has successfully been created!⭐
+            </AlertDescription>
+          </div>
+          <button
+            onClick={() => setShowAlert(false)}
+            className="text-white hover:text-gray-300 text-xl"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* Form */}
       <form
         onSubmit={handleSubmit}
         className="space-y-8 bg-white shadow-lg rounded-lg p-10"
@@ -58,10 +89,7 @@ const Create = () => {
 
         {/* Description Field */}
         <div>
-          <label
-            htmlFor="description"
-            className="block text-xl font-medium mb-3"
-          >
+          <label htmlFor="description" className="block text-xl font-medium mb-3">
             Description
           </label>
           <textarea
@@ -89,10 +117,9 @@ const Create = () => {
             className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Select a category</option>
-            <option value="AI">AI</option>
-            <option value="Blockchain">Blockchain</option>
-            <option value="Web Development">Web Development</option>
-            <option value="Data Science">Data Science</option>
+            <option value="Fraud Detection">Fraud Detection</option>
+            <option value="Price Prediction">Price Prediction</option>
+            <option value="Fine Tuning">Fine Tuning</option>
           </select>
         </div>
 
@@ -121,11 +148,14 @@ const Create = () => {
             type="submit"
             className="bg-blue-600 text-white px-8 py-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:outline-none text-lg"
           >
-            {isLoading ? <RotatingLines height={'30'} width={'30'} strokeColor="white"/> : "Submit"}
+            {isLoading ? (
+              <RotatingLines height={"30"} width={"30"} strokeColor="white" />
+            ) : (
+              "Submit"
+            )}
           </button>
         </div>
       </form>
-      {/* </div> */}
     </>
   );
 };
